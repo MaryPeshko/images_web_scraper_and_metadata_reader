@@ -1,15 +1,19 @@
 
-spider
-├── imports
-├── configuration definition
-├── CrawlState definition
-├── parse_args()
-├── normalize_url()
-├── fetch_page()
-├── parse_html()
-├── download_image()
-├── crawl()
-└── main()
+
+## Crawling approach
+
+The crawler uses breadth-first search (BFS): it processes the start page, then
+all directly linked pages, before processing deeper links.
+
+Pages waiting to be processed are stored in a FIFO queue (First In, First
+Out). New pages are added to the end of the queue, and the next page is taken
+from the front. This ensures that direct links are processed before deeper
+pages.
+
+
+
+![BFS traversal scheme](./BFS-scheme.png)
+
 
 A configuration object:
 - `start_url` - the starting page; its crawl depth is 0.
@@ -52,7 +56,7 @@ I want to have such funcions.
 
     -  Create the runtime state object after parsing the arguments. `CrawlState` is a class, and `CrawlState()` creates an object.
 
-    - `normalize_url` - return a canonical absolute URL for comparisons and requests. Remove the fragment, and ensure the URL has a supported HTTP scheme. Use it for the starting URL and for links after resolving them with `urljoin`.
+    - `normalize_url` - return a canonical absolute URL for comparisons and requests. Remove the fragment, normalize a leading `www.` hostname to the base hostname, remove the `/de` language prefix, and ensure the URL has a supported HTTP scheme. Use it for the starting URL and for links after resolving them with `urljoin`.
 
     - `crawl(current_url, current_depth, config, state, parent_dir)` - Process one page from the breadth-first queue.
 
@@ -101,7 +105,7 @@ I want to have such funcions.
         - Write the response bytes. (Save as a file) 
         - Image file-save success and failures are counted in `downloaded_images` and `failed_downloads` respectively.
 
-    8. Continue crawling. If recursive crawling is enabled, iterate over the normalized page links returned by `parse_html`. For each link that has not been visited, add it to `visited_urls` and append `(link, current_depth + 1, current_dir)` to the end of the queue. Processing the queue in FIFO order ensures that all direct links are processed before deeper links.
+    8. Continue crawling. If recursive crawling is enabled, iterate over the normalized page links returned by `parse_html`. For each link that has not been visited, add it to `visited_urls` and append `(link, current_depth + 1, current_dir)` to the end of the queue. Processing the queue in (First In, First Out) order ensures that all direct links are processed before deeper links.
 
     ```python
     queue = deque([(config.start_url, 0, config.path)])
@@ -124,7 +128,9 @@ I want to have such funcions.
 
 ## Folder structure
 
-1. Represent the structure as a recursive relationship:
+I want to organise downloaded images into a hierarchical folder structure that reflects the website's page hierarchy.
+
+Folders represent qualifying pages and their nearest qualifying ancestors:
 
 root/
 ├── page-1a/
@@ -133,30 +139,22 @@ root/
 │       └── image-2.png
 └── page-1b/
 
-The name of the folder represents the level of the recursive call: **depth + letter**. For example, `page-1a` is a qualifying page at depth 1 and `page-2a` is a qualifying child at depth 2. The letter identifies the qualifying child order under the same parent: `a`, `b`, `c`, and so on.
+`page-Nx` uses the crawl depth (`N`) and the qualifying-child order (`x`) under the same parent. For example, `page-1a` and `page-1b` are sibling pages; `page-2a` is a qualifying child of `page-1a`.
 
-Only letters from `a` through `z` are available for children of one parent. If no folder name is available after `z`, do not create a directory, print a message, and continue crawling the page links without saving that page’s images.
+Each parent supports letters `a` through `z`. If the limit is reached, print a message, continue crawling, and do not save that page's images.
 
-config.path is the root directory, and the starting page saves directly there.
+`config.path` is the root directory; the starting page saves directly there.
 
-2. Create the subdirectory inside crawl(). 
+Create subdirectories while processing pages.
 
-The directory decision belongs to crawl() because only crawl() knows whether the page request succeeded, whether the page contains images, and where the page sits in the recursion tree.
-
-3. Define the no-images behavior
-
-If a successful page has no supported images:
+Pages without supported images do not create directories. Their children use the nearest qualifying ancestor:
 
 root/
 └── page-with-images/
     └── child-with-images/
 
-My desired folder structure treats links **according to their relationship to the start page**:
+Direct links from the same page are siblings:
 
 start
 ├── about-us  -> page-1a
 └── events    -> page-1b
-
-Expected behavior: direct links from the same page should be siblings.
-
-The no-image page should not create a directory. Its children should be placed under the nearest qualifying ancestor.

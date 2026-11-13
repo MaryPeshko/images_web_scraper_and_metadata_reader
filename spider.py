@@ -3,6 +3,7 @@
 import argparse
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass, field
 # `Path` class that can make system calls. Path represents a filesystem path, it 
 # also offers methods to do system calls on path objects.
@@ -40,12 +41,33 @@ class CrawlState:
 
 
 def normalize_url(url: str) -> str:
-    """Return a normalized HTTP(S) URL without a fragment."""
+    """Return a normalized HTTP(S) URL without a fragment or leading ``www.``."""
+    # parsed containe the URL parts:
+    # scheme    https
+    # netloc    www.42berlin.de
+    # path      /de/imprint
+
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError(f"unsupported or invalid URL: {url}")
 
-    normalized = parsed._replace(fragment="")
+    hostname = parsed.hostname
+    if hostname is None:
+        raise ValueError(f"URL has no hostname: {url}")
+
+    canonical_netloc = parsed.netloc
+    if hostname.lower().startswith("www."):
+        canonical_netloc = canonical_netloc[4:]
+    canonical_path = parsed.path
+    if canonical_path == "/de":
+        canonical_path = "/"
+    elif canonical_path.startswith("/de/"):
+        canonical_path = canonical_path[3:]
+    normalized = parsed._replace(
+        netloc=canonical_netloc,
+        path=canonical_path,
+        fragment="",
+    )
     return urlunparse(normalized)
 
 
@@ -231,50 +253,64 @@ def crawl(
     state: CrawlState,
     parent_dir: Path,
 ) -> None:
+    """
+    BFS implementation has a for loop inside a while loop
+    while pages_to_visit: keeps processing pages until the queue is empty.
+    for link in links: examines every link found on the current page.
+    """
 
-    if not config.recursive and current_depth > 0:
-        return
-    if config.recursive and current_depth > config.max_recurs_depth:
-        return
-    if not belongs_to_allowed_domain(current_url, config.allowed_domain):
-        return
-    if current_url in state.visited_urls:
-        return
+    pages_to_visit: deque[tuple[str, int, Path]] = deque(
+        [(current_url, current_depth, parent_dir)])
     state.visited_urls.add(current_url)
 
-    html = fetch_page(current_url, state)
-    if html is None:
-        return
+    while pages_to_visit:
+        # tuple unpacking: popleft() returns one tuple from the queue from the front
+        page_url, page_depth, page_parent_dir = pages_to_visit.popleft()
 
-    image_sources, links = parse_html(html, current_url)
-    supported_images: list[str] = []
-    for image_source in image_sources:
-        if is_supported_image(urljoin(current_url, image_source)):
-            supported_images.append(image_source)
+        if not belongs_to_allowed_domain(page_url, config.allowed_domain):
+            continue
 
-    current_dir = parent_dir
-    if current_depth > 0 and supported_images:
-        current_dir = create_subdirectory(parent_dir, current_depth, state)
-        # it returns None when it cannot create another subdirectory
-        # that means all 26 directory suffixes (a through z) have already been used
-        if current_dir is None:
-            if config.recursive:
-                for link in links:
-                    crawl(link, current_depth + 1, config, state, parent_dir)
-            return
-        save_page_url(current_dir, current_url)
+        html = fetch_page(page_url, state)
+        if html is None:
+            continue
 
-    for image_source in supported_images:
-        download_image(current_url, image_source, current_dir, state)
+        image_sources, links = parse_html(html, page_url)
+        supported_images: list[str] = []
+        for image_source in image_sources:
+            if is_supported_image(urljoin(page_url, image_source)):
+                supported_images.append(image_source)
 
-    if config.recursive:
+        page_dir = page_parent_dir
+        can_save_images = True
+        if page_depth > 0 and supported_images:
+            created_dir = create_subdirectory(
+                page_parent_dir, page_depth, state
+            )
+            if created_dir is None:
+                can_save_images = False
+            else:
+                page_dir = created_dir
+                save_page_url(page_dir, page_url)
+
+        if can_save_images:
+            for image_source in supported_images:
+                download_image(page_url, image_source, page_dir, state)
+
+        if not config.recursive or page_depth >= config.max_recurs_depth:
+            continue
+
+        # This loop adds newly discovered pages to the end of the queue
         for link in links:
-            crawl(link, current_depth + 1, config, state, current_dir)
+            if link in state.visited_urls:
+                continue
+            state.visited_urls.add(link)
+            pages_to_visit.append((link, page_depth + 1, page_dir))
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     config = parse_args(argv)
     config.path.mkdir(parents=True, exist_ok=True)
+    save_page_url(config.path, config.start_url)
     state = CrawlState()
     crawl(config.start_url, 0, config, state, config.path)
     print(

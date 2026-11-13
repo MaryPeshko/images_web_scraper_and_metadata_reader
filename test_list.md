@@ -10,6 +10,10 @@ Kілька тестів:
 
 - https://www.42berlin.de/
 
+```bash
+python3 spider.py -r -l 2 -p data_2 https://www.42berlin.de/
+```
+
 **A. Основна функціональність**
 
 <table>
