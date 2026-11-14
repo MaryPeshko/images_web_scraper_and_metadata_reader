@@ -90,6 +90,7 @@ def parse_args(argv: Optional[list[str]] = None) -> Configuration:
     parser.add_argument("-l", type=int, dest="max_recurs_depth", default=5, help="maximum recursion depth",)
     parser.add_argument("-p", dest="path", default="./data/", help="directory where images are saved",)
     parser.add_argument("url", help="URL to crawl")
+    # parse_args is a method of the ArgumentParser
     args = parser.parse_args(argv)
 
     if args.max_recurs_depth < 0:
