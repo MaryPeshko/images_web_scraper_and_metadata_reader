@@ -4,7 +4,7 @@ import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import spider
+import spider.spider as spider
 
 
 PROJECT_DIR = Path(__file__).parent
@@ -25,7 +25,7 @@ def main() -> None:
             result = spider.main(["-p", output_directory, url])
 
             output_path = Path(output_directory)
-            downloaded_images = list(output_path.glob("*.png"))
+            downloaded_images = list(output_path.glob("dinosaur_*.png"))
             subdirectories = [path for path in output_path.iterdir() if path.is_dir()]
 
             assert result == 0

@@ -101,7 +101,7 @@ I want to have such funcions.
         - Validate the image URL and extension. We are interested in the images with such extenstions - `.jpg/jpeg`, `.png`, `.gif`, `.bmp`.
         - Request the binary content. Handle HTTP and network errors, and count unsuccessful image requests as failed downloads.
         - Save the image in the output directory created and provided by `crawl()`. If `crawl()` cannot create a directory because the `a`-to-`z` limit was reached, it does not call `download_image()` for that page.
-        - Choose a safe output filename. Two different URLs may have the same basename, such as `logo.png`; avoid overwriting an existing file by appending a timestamp to each file to create a unique name.
+        - Choose a safe output filename based on the URI basename. For example, `maxresdefault.jpg` is saved as `maxresdefault_[timestamp].jpg`. The timestamp prevents overwriting when different absolute paths have the same basename.
         - Write the response bytes. (Save as a file) 
         - Image file-save success and failures are counted in `downloaded_images` and `failed_downloads` respectively.
 

@@ -229,11 +229,13 @@ def download_image(
         print(f"Image download failed for {image_url}: {error}", file=sys.stderr)
         return
 
-    suffix = Path(urlparse(image_url).path).suffix.lower()
-    filename = f"image-{time.time_ns()}{suffix}"
+    image_path = Path(urlparse(image_url).path)
+    stem = image_path.stem or "image"
+    suffix = image_path.suffix.lower()
+    filename = f"{stem}_{time.time_ns()}{suffix}"
     output_path = output_dir / filename
     while output_path.exists():
-        filename = f"image-{time.time_ns()}{suffix}"
+        filename = f"{stem}_{time.time_ns()}{suffix}"
         output_path = output_dir / filename
 
     try:
