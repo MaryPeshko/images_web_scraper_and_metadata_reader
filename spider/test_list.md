@@ -2,11 +2,11 @@ Sites
 
 - https://crawler-test.com/
 
-Kілька тестів:
-- Image Links — чи знаходить spider зображення за посиланнями.
-- Relative Link — чи правильно обробляє відносні URL.
-- Repeated internal links — чи не зациклюється на повторних посиланнях.
-- Broken Links Internal — чи переживає помилки під час переходу.
+Several tests:
+- Image Links — whether spider finds images through links.
+- Relative Link — whether relative URLs are handled correctly.
+- Repeated internal links — whether spider avoids looping on repeated links.
+- Broken Links Internal — whether navigation errors are handled.
 
 - https://www.42berlin.de/
 
@@ -14,38 +14,38 @@ Kілька тестів:
 python3 spider.py -r -l 2 -p data_2 https://www.42berlin.de/
 ```
 
-**A. Основна функціональність**
+**A. Core functionality**
 
 <table>
 <tr>
-<th> Тест </th>
-<th> Що перевіряєш </th>
+<th> Test </th>
+<th> What to check </th>
 </tr>
 <tr>
 <td>
 
-Сторінка з кількома зображеннями
+Page with multiple images
 
-Зображення з різними URL
+Images with different URLs
 
-Рекурсивні посилання
+Recursive links
 
-Повторні посилання
+Repeated links
 
-Непідтримуване розширення
+Unsupported extension
 
 </td>
 <td>
 
-Чи завантажуються всі підтримувані формати
+Whether all supported formats are downloaded
 
-Абсолютні, root-relative та relative URL
+Absolute, root-relative, and relative URLs
 
-Чи знаходить spider зображення на дочірніх сторінках
+Whether spider finds images on child pages
 
-Чи не завантажує те саме зображення багато разів
+Whether the same image is not downloaded multiple times
 
-Чи ігнорує, наприклад, .svg або .webp, якщо вони не входять до вимог
+Whether it ignores, for example, `.svg` or `.webp` if they are not required
 
 </td>
 </tr>
@@ -55,50 +55,49 @@ python3 spider.py -r -l 2 -p data_2 https://www.42berlin.de/
 
 <table>
 <tr>
-<th> Тест </th>
-<th> Що перевіряєш </th>
+<th> Test </th>
+<th> What to check </th>
 </tr>
 <tr>
 <td>
 
-Сторінка без зображень
+Page without images
 
-Сторінка без посилань
+Page without links
 
-Дві сторінки посилаються одна на одну
+Two pages linking to each other
 
-Відсутня сторінка (404)
+Missing page (404)
 
-Недоступний сервер
+Unavailable server
 
-Однакові назви файлів
+Identical file names
 
 </td>
 <td>
 
-Програма не падає
+The program does not crash
 
-Рекурсія нормально завершується
+Recursion terminates normally
 
-Нескінченної рекурсії немає
+There is no infinite recursion
 
-Помилка обробляється, програма не падає
+The error is handled and the program does not crash
 
-Помилка з'єднання обробляється
+The connection error is handled
 
-Один файл не повинен непомітно перезаписати інший
+One file must not silently overwrite another
 
 </td>
 </tr>
 </table>
 
-**C. Параметри командного рядка**
+**C. Command-line options**
 
-Перевір усі опції, які вимагає завдання:
-- -r — рекурсивне завантаження.
-- -l N — обмеження глибини рекурсії.
-- -p PATH — власна директорія для збереження.
-- Відсутній аргумент після -p або -l.
-- Невідомий параметр.
-- Запуск без URL.
-
+Check all options required by the assignment:
+- `-r` — recursive downloading.
+- `-l N` — recursion depth limit.
+- `-p PATH` — custom directory for saving files.
+- Missing argument after `-p` or `-l`.
+- Unknown option.
+- Running without a URL.

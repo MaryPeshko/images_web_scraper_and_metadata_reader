@@ -1,5 +1,6 @@
 import argparse
 import sys
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -8,6 +9,8 @@ from PIL.ExifTags import TAGS, GPSTAGS, IFD
 
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MiB
+MAX_IMAGE_PIXELS = 50_000_000           # 50 million pixels
 
 
 def parse_args(argv: Optional[list[str]] = None) -> list[Path]:
@@ -154,6 +157,18 @@ def display_exif_metadata(image: Image.Image) -> None:
         display_gps_position(gps_values)
 
 
+def check_image_size(image: Image.Image) -> bool:
+    pixel_count = image.width * image.height
+    if pixel_count > MAX_IMAGE_PIXELS:
+        print(
+            f"image has too many pixels: {pixel_count} "
+            f"(limit: {MAX_IMAGE_PIXELS})",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 def process_file(path: Path, image_number: int) -> bool:
     if not path.exists():
         print(f"file does not exist: {path}", file=sys.stderr)
@@ -168,14 +183,39 @@ def process_file(path: Path, image_number: int) -> bool:
         return False
 
     try:
+        # File-size check
+        file_size = path.stat().st_size
+        if file_size > MAX_FILE_SIZE_BYTES:
+            print(
+                f"file is too large: {file_size} bytes ",
+                file=sys.stderr,
+            )
+            return False
+
         print(f"Image_{image_number} [{path.name}]")
         display_filesystem_metadata(path)
-        with Image.open(path) as image:
-            display_image_properties(image)
-            display_exif_metadata(image)
-            print("-" * 50)
-
-
+        
+        # The warnings module controls non-fatal warnings raised by Python
+        # and libraries such as Pillow. catch_warnings() saves the current
+        # warning settings and restores them when this block ends, so our
+        # filter does not affect the rest of the program.
+        with warnings.catch_warnings():
+            # simplefilter("error") changes this specific warning from a
+            # printed warning into an exception that we can handle below.
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(path) as image:
+                # Image-dimension check
+                if not check_image_size(image):
+                    return False
+                display_image_properties(image)
+                display_exif_metadata(image)
+                print("-" * 50)
+    except Image.DecompressionBombError as error:
+        print(f"decompression bomb rejected for {path}: {error}", file=sys.stderr)
+        return False
+    except Image.DecompressionBombWarning as error:
+        print(f"decompression bomb warning for {path}: {error}", file=sys.stderr)
+        return False
     except OSError as error:
         print(f"cannot open file {path}: {error}", file=sys.stderr)
         return False

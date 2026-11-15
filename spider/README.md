@@ -26,6 +26,29 @@ python3 spider.py https://example.com
 python3 spider.py -r -l 5 -p ./data/ https://example.com
 ```
 
+The spider accepts HTTP and HTTPS URLs. It downloads only these image formats:
+
+- `.jpg`
+- `.jpeg`
+- `.png`
+- `.gif`
+- `.bmp`
+
+---
+
+## Crawling approach
+
+The crawler uses breadth-first search (BFS): it processes the start page, then
+all directly linked pages, before processing deeper links.
+
+Pages waiting to be processed are stored in a FIFO queue (First In, First
+Out). New pages are added to the end of the queue, and the next page is taken
+from the front. This ensures that direct links are processed before deeper
+pages.
+
+
+
+![BFS traversal scheme](./img_learn/BFS-scheme.png)
 
 ---
 
@@ -40,6 +63,5 @@ If no `User-Agent` header is specified, Python’s `urllib` usually sends its ow
 The help output is generated dynamically by Python’s standard-library `argparse` module.
 
 ---
-
 
 
