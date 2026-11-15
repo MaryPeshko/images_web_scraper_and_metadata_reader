@@ -4,7 +4,7 @@ import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import spider.spider as spider
+import spider
 
 
 PROJECT_DIR = Path(__file__).parent

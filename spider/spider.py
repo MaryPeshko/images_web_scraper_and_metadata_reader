@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import argparse
 import sys
 import time
@@ -312,6 +310,12 @@ def crawl(
 
 def main(argv: Optional[list[str]] = None) -> int:
     config = parse_args(argv)
+    if config.path.exists():
+        print(
+            f"Output directory already exists: {config.path}/",
+            file=sys.stderr,
+        )
+        return 1
     config.path.mkdir(parents=True, exist_ok=True)
     save_page_url(config.path, config.start_url)
     state = CrawlState()
