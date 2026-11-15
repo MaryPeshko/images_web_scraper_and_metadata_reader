@@ -29,3 +29,9 @@ stat - display file or file system status
 
 SYNOPSIS
        stat [OPTION]... FILE...
+
+## Structure of JPEG
+
+![Structure_of_JPEG.jpg](./img_learn/Structure_of_JPEG.jpg)
+
+EXIF is commonly stored in an APP1 segment in JPEG files.
