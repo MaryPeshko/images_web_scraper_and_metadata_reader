@@ -11,7 +11,17 @@ CLI program invoked as
 Support `.jpg/.jpeg`, `.png`, `.gif`, and `.bmp`.
 
 
+Install dependency
 
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Help
+
+```bash
+python3 spider.py --help
+```
 
 ---
 
