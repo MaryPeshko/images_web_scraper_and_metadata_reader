@@ -25,6 +25,13 @@ python3 spider.py --help
 
 ---
 
+## Cleanup
+
+```bash
+python3 -m pip show Pillow
+python3 -m pip uninstall Pillow
+``
+
 stat - display file or file system status
 
 SYNOPSIS

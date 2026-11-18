@@ -10,6 +10,13 @@ Install dependency
 python3 -m pip install -r requirements.txt
 ```
 
+## Cleanup
+
+```bash
+python3 -m pip show beautifulsoup4
+python3 -m pip uninstall beautifulsoup4
+``
+
 Added:
 
 - recursive `page-depth-letter` directories;
