@@ -14,6 +14,14 @@ Several tests:
 python3 spider.py -r -l 2 -p data_2 https://www.42berlin.de/
 ```
 
+## Redirection test 
+
+Status code 308 and redirection to the same domain
+
+```bash
+python3 spider.py -r -l 2 https://berlin.de/
+```
+
 **A. Core functionality**
 
 <table>

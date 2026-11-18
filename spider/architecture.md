@@ -2,13 +2,9 @@
 
 ## Crawling approach
 
-The crawler uses breadth-first search (BFS): it processes the start page, then
-all directly linked pages, before processing deeper links.
+The crawler uses breadth-first search (BFS): it processes the start page, then all directly linked pages, before processing deeper links.
 
-Pages waiting to be processed are stored in a FIFO queue (First In, First
-Out). New pages are added to the end of the queue, and the next page is taken
-from the front. This ensures that direct links are processed before deeper
-pages.
+Pages waiting to be processed are stored in a FIFO queue (First In, First Out). New pages are added to the end of the queue, and the next page is taken from the front. This ensures that direct links are processed before deeper pages.
 
 
 

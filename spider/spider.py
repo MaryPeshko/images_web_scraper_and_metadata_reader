@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse, urlunparse
-from urllib.request import Request, urlopen
+# HTTPRedirectHandler is a special class, which is responsible for handling HTTP redirects
+# build_opener([handler, ...) is a function that creates an OpenerDirector object,
+# that manages the process of opening URLs and sending HTTP requests.
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from bs4 import BeautifulSoup
 
@@ -17,12 +20,16 @@ from bs4 import BeautifulSoup
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
 REQUEST_TIMEOUT = 10
 USER_AGENT = "arachnida/1.0"
+REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+MAX_REDIRECTS = 1
 
 
 @dataclass
 class Configuration:
     start_url: str
-    allowed_domain: str
+    allowed_domain: str # Base domain of the start URL (e.g. berlin.de), used for the www promotion rule.
+    allowed_host: str # Exact hostname from the start URL; enforces the strict crawl scope.
+    allow_www_promotion: bool # Allows apex-to-www promotion (e.g. berlin.de -> www.berlin.de) on the root request only.
     recursive: bool
     max_recurs_depth: int
     path: Path
@@ -36,10 +43,18 @@ class CrawlState:
     downloaded_images: int = 0
     failed_downloads: int = 0
     next_directory_letters: dict[Path, int] = field(default_factory=dict)
+    aborted_due_to_directory_limit: bool = False
+
+
+# `redirect_request()` method creates a new request to navigate to the redirect URL.
+# I override it so method returns `None`: do not create a new request for the redirect.
+class ManualRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def normalize_url(url: str) -> str:
-    """Return a normalized HTTP(S) URL without a fragment or leading ``www.``."""
+    """Return a normalized HTTP(S) URL without a fragment."""
     # parsed containe the URL parts:
     # scheme    https
     # netloc    www.42berlin.de
@@ -53,16 +68,12 @@ def normalize_url(url: str) -> str:
     if hostname is None:
         raise ValueError(f"URL has no hostname: {url}")
 
-    canonical_netloc = parsed.netloc
-    if hostname.lower().startswith("www."):
-        canonical_netloc = canonical_netloc[4:]
     canonical_path = parsed.path
     if canonical_path == "/de":
         canonical_path = "/"
     elif canonical_path.startswith("/de/"):
         canonical_path = canonical_path[3:]
     normalized = parsed._replace(
-        netloc=canonical_netloc,
         path=canonical_path,
         fragment="",
     )
@@ -108,32 +119,109 @@ def parse_args(argv: Optional[list[str]] = None) -> Configuration:
     return Configuration(
         start_url=start_url,
         allowed_domain=base_domain(hostname),
+        allowed_host=hostname.lower().rstrip("."),
+        # if hostname is `berlin.de` and base_domain is `berlin.de`, value is True
+        allow_www_promotion=hostname.lower().rstrip(".") == base_domain(hostname),
         recursive=args.recursive,
         max_recurs_depth=args.max_recurs_depth,
         path=Path(args.path),
     )
 
 
-def belongs_to_allowed_domain(url: str, allowed_domain: str) -> bool:
+# Host means the full DNS name used in the URL: berlin.de, www.berlin.de or service.berlin.de
+# All of those hosts belong to the same domain berlin.de, but they are different hosts
+def belongs_to_allowed_host(url: str, allowed_host: str) -> bool:
     hostname = urlparse(url).hostname
     if hostname is None:
         return False
     hostname = hostname.lower().rstrip(".")
-    return hostname == allowed_domain or hostname.endswith(f".{allowed_domain}")
+    return hostname == allowed_host
 
 
-def fetch_page(url: str, state: CrawlState) -> Optional[str]:
-    request = Request(url, headers={"User-Agent": USER_AGENT})
+def can_follow_redirect(
+    redirect_url: str,
+    config: Configuration,
+    is_root_request: bool,
+) -> bool:
+    redirect_host = urlparse(redirect_url).hostname
+    if redirect_host is None:
+        return False
+    redirect_host = redirect_host.lower().rstrip(".")
+
+    if redirect_host == config.allowed_host:
+        return True
+
+    if (
+        is_root_request
+        and config.allow_www_promotion
+        and redirect_host == f"www.{config.allowed_domain}"
+    ):
+        return True
+
+    return False
+
+
+# obtaining the response, following permitted redirects, and enforcing the redirect limit
+# Returns: response body and effective URL (`effective_url`).
+def open_with_redirects(url: str, config: Configuration, is_root_request: bool,
+                        ) -> tuple[bytes, str]:
+    opener = build_opener(ManualRedirectHandler())
+    current_url = url
+    redirect_count = 0
+
+    while True:
+        request = Request(current_url, headers={"User-Agent": USER_AGENT})
+        try:
+            with opener.open(request, timeout=REQUEST_TIMEOUT) as response:
+                return response.read(), current_url
+        except HTTPError as error:
+            if error.code in REDIRECT_STATUS_CODES:
+                location = error.headers.get("Location")
+                if not location:
+                    raise
+
+                redirect_url = urljoin(current_url, location)
+                redirect_url = normalize_url(redirect_url)
+
+                if not can_follow_redirect(redirect_url, config, is_root_request):
+                    raise
+
+                redirect_count += 1
+                if redirect_count > MAX_REDIRECTS:
+                    print(
+                        f"Second redirection detected for {url}; stopping at {redirect_url}"
+                    )
+                    raise
+
+                current_url = redirect_url
+                continue
+            raise
+
+
+# handling failures, updating crawler statistics, decoding the response
+# returning the result decoded page content and effective URL, or None
+def fetch_page(
+    url: str,
+    state: CrawlState,
+    config: Configuration,
+    is_root_request: bool,
+) -> Optional[tuple[str, str]]:
     try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-            if not 200 <= response.status < 300:
-                state.failed_page_requests += 1
-                print(f"Page request failed for {url}: HTTP {response.status}", file=sys.stderr)
-                return None
-            body = response.read()
+        # `effective_url` is the final URL actually reached after manual redirect handling
+        body, effective_url = open_with_redirects(url, config, is_root_request)
+    except ValueError:
+        state.failed_page_requests += 1
+        print(f"Page request failed for {url}: invalid redirect URL", file=sys.stderr)
+        return None
     except HTTPError as error:
         state.failed_page_requests += 1
-        print(f"Page request failed for {url}: HTTP {error.code}", file=sys.stderr)
+        if error.code in REDIRECT_STATUS_CODES:
+            print(
+                f"Page request failed for {url}: redirect to disallowed host or invalid redirect response",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Page request failed for {url}: HTTP {error.code}", file=sys.stderr)
         return None
     except (URLError, TimeoutError, OSError) as error:
         state.failed_page_requests += 1
@@ -141,7 +229,7 @@ def fetch_page(url: str, state: CrawlState) -> Optional[str]:
         return None
 
     state.successful_page_requests += 1
-    return body.decode("utf-8", errors="replace")
+    return body.decode("utf-8", errors="replace"), effective_url
 
 
 def parse_html(html: str, current_url: str) -> tuple[list[str], list[str]]:
@@ -184,6 +272,7 @@ def create_subdirectory(
             "the a-z limit has been reached.",
             file=sys.stderr,
         )
+        state.aborted_due_to_directory_limit = True
         return None
 
     # The / operator is overloaded by Path to join paths
@@ -220,8 +309,6 @@ def download_image(
     request = Request(image_url, headers={"User-Agent": USER_AGENT})
     try:
         with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-            if not 200 <= response.status < 300:
-                raise OSError(f"HTTP {response.status}")
             content = response.read()
     except (HTTPError, URLError, TimeoutError, OSError) as error:
         state.failed_downloads += 1
@@ -268,17 +355,39 @@ def crawl(
         # tuple unpacking: popleft() returns one tuple from the queue from the front
         page_url, page_depth, page_parent_dir = pages_to_visit.popleft()
 
-        if not belongs_to_allowed_domain(page_url, config.allowed_domain):
+        if not belongs_to_allowed_host(page_url, config.allowed_host):
             continue
 
-        html = fetch_page(page_url, state)
-        if html is None:
+        page_content = fetch_page(
+            page_url,
+            state,
+            config,
+            is_root_request=(page_depth == 0),
+        )
+        if page_content is None:
+            continue
+        html, effective_url = page_content
+
+        effective_host = urlparse(effective_url).hostname
+        if effective_host is None:
+            continue
+        effective_host = effective_host.lower().rstrip(".")
+        if (
+            page_depth == 0
+            and config.allow_www_promotion
+            and effective_host == f"www.{config.allowed_domain}"
+        ):
+            config.allowed_host = effective_host
+
+        if not belongs_to_allowed_host(effective_url, config.allowed_host):
             continue
 
-        image_sources, links = parse_html(html, page_url)
+        state.visited_urls.add(effective_url)
+
+        image_sources, links = parse_html(html, effective_url)
         supported_images: list[str] = []
         for image_source in image_sources:
-            if is_supported_image(urljoin(page_url, image_source)):
+            if is_supported_image(urljoin(effective_url, image_source)):
                 supported_images.append(image_source)
 
         page_dir = page_parent_dir
@@ -288,14 +397,14 @@ def crawl(
                 page_parent_dir, page_depth, state
             )
             if created_dir is None:
-                can_save_images = False
+                return
             else:
                 page_dir = created_dir
-                save_page_url(page_dir, page_url)
+                save_page_url(page_dir, effective_url)
 
         if can_save_images:
             for image_source in supported_images:
-                download_image(page_url, image_source, page_dir, state)
+                download_image(effective_url, image_source, page_dir, state)
 
         if not config.recursive or page_depth >= config.max_recurs_depth:
             continue
@@ -326,6 +435,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         f"Downloaded images: {state.downloaded_images}; "
         f"Failed downloads: {state.failed_downloads}"
     )
+    if state.aborted_due_to_directory_limit:
+        return 1
     return 0
 
 
